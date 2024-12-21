@@ -75,6 +75,22 @@
         factory(jQuery);
     }
 })(function ($) {
+    // Added non-passive event listener to a scroll-blocking 'touchstart' event.
+    // https://github.com/WICG/EventListenerOptions/blob/gh-pages/explainer.md
+    // Usage:
+    // $("#element").on("touchstart.nonPassive", function () {...})
+    // $("#element").on("touchmove.nonPassive", function () {...})
+    $.event.special.touchstart = {
+        setup: function (_, ns, handle) {
+            this.addEventListener("touchstart", handle, {passive: !ns.includes("nonPassive")});
+        }
+    };
+    $.event.special.touchmove = {
+        setup: function (_, ns, handle) {
+            this.addEventListener("touchmove", handle, {passive: !ns.includes("nonPassive")});
+        }
+    };
+
     $.fn.jScrollPane = function (settings) {
         // JScrollPane "class" - public methods are available through $('selector').data('jsp')
         function JScrollPane(elem, s) {
@@ -430,9 +446,11 @@
                     verticalDrag = verticalTrack.find('>.jspDrag');
 
                     if (settings.showArrows) {
-                        arrowUp = $('<a class="jspArrow jspArrowUp"></a>').on('mousedown.jsp', getArrowScroll(0, -1)).on('click.jsp', nil);
+                        arrowUp = $('<a class="jspArrow jspArrowUp"></a>')
+                            .on('mousedown.jsp touchstart.jsp.nonPassive', getArrowScroll(0, -1))
+                            .on('click.jsp', nil);
                         arrowDown = $('<a class="jspArrow jspArrowDown"></a>')
-                            .on('mousedown.jsp', getArrowScroll(0, 1))
+                            .on('mousedown.jsp touchstart.jsp.nonPassive', getArrowScroll(0, 1))
                             .on('click.jsp', nil);
                         if (settings.arrowScrollOnHover) {
                             arrowUp.on('mouseover.jsp', getArrowScroll(0, -1, arrowUp));
@@ -454,19 +472,20 @@
                         .on('mouseleave', function () {
                             verticalDrag.removeClass('jspHover');
                         })
-                        .on('mousedown.jsp', function (e) {
+                        .on('mousedown.jsp touchstart.jsp.nonPassive', function (e) {
                             // Stop IE from allowing text selection
                             $('html').on('dragstart.jsp selectstart.jsp', nil);
 
                             verticalDrag.addClass('jspActive');
 
-                            var startY = e.pageY - verticalDrag.position().top;
+                            var startY = (e.pageY || e.originalEvent.changedTouches[0].pageY) - verticalDrag.position().top;
 
                             $('html')
-                                .on('mousemove.jsp', function (e) {
-                                    positionDragY(e.pageY - startY, false);
+                                .on('mousemove.jsp touchmove.jsp.nonPassive', function (e) {
+                                    const pageY = e.pageY || e.originalEvent.changedTouches[0].pageY
+                                    positionDragY(pageY - startY, false);
                                 })
-                                .on('mouseup.jsp mouseleave.jsp', cancelDrag);
+                                .on('mouseup.jsp touchend.jsp touchcancel.jsp mouseleave.jsp', cancelDrag);
                             return false;
                         });
                     sizeVerticalScrollbar();
@@ -511,10 +530,10 @@
 
                     if (settings.showArrows) {
                         arrowLeft = $('<a class="jspArrow jspArrowLeft"></a>')
-                            .on('mousedown.jsp', getArrowScroll(-1, 0))
+                            .on('mousedown.jsp touchstart.jsp.nonPassive', getArrowScroll(-1, 0))
                             .on('click.jsp', nil);
                         arrowRight = $('<a class="jspArrow jspArrowRight"></a>')
-                            .on('mousedown.jsp', getArrowScroll(1, 0))
+                            .on('mousedown.jsp touchstart.jsp.nonPassive', getArrowScroll(1, 0))
                             .on('click.jsp', nil);
                         if (settings.arrowScrollOnHover) {
                             arrowLeft.on('mouseover.jsp', getArrowScroll(-1, 0, arrowLeft));
@@ -530,19 +549,20 @@
                         .on('mouseleave', function () {
                             horizontalDrag.removeClass('jspHover');
                         })
-                        .on('mousedown.jsp', function (e) {
+                        .on('mousedown.jsp touchstart.jsp.nonPassive', function (e) {
                             // Stop IE from allowing text selection
                             $('html').on('dragstart.jsp selectstart.jsp', nil);
 
                             horizontalDrag.addClass('jspActive');
 
-                            var startX = e.pageX - horizontalDrag.position().left;
+                            var startX = (e.pageX || e.originalEvent.changedTouches[0].pageX) - horizontalDrag.position().left;
 
                             $('html')
-                                .on('mousemove.jsp', function (e) {
-                                    positionDragX(e.pageX - startX, false);
+                                .on('mousemove.jsp touchmove.jsp.nonPassive', function (e) {
+                                    const pageX = e.pageX || e.originalEvent.changedTouches[0].pageX
+                                    positionDragX(pageX - startX, false);
                                 })
-                                .on('mouseup.jsp mouseleave.jsp', cancelDrag);
+                                .on('mouseup.jsp touchend.jsp touchcancel.jsp mouseleave.jsp', cancelDrag);
                             return false;
                         });
                     horizontalTrackWidth = container.innerWidth();
@@ -656,7 +676,7 @@
 
                 doScroll();
 
-                eve = ele ? 'mouseout.jsp' : 'mouseup.jsp';
+                eve = ele ? 'mouseout.jsp' : 'mouseup.jsp touchend.jsp touchcancel.jsp';
                 ele = ele || $('html');
                 ele.on(eve, function () {
                     arrow.removeClass('jspActive');
@@ -671,16 +691,16 @@
             function initClickOnTrack() {
                 removeClickOnTrack();
                 if (isScrollableV) {
-                    verticalTrack.on('mousedown.jsp', function (e) {
+                    verticalTrack.on('mousedown.jsp touchstart.jsp.nonPassive', function (e) {
                         if (e.originalTarget === undefined || e.originalTarget == e.currentTarget) {
                             var clickedTrack = $(this),
                                 offset = clickedTrack.offset(),
-                                direction = e.pageY - offset.top - verticalDragPosition,
+                                direction = (e.pageY || e.originalEvent.changedTouches[0].pageY) - offset.top - verticalDragPosition,
                                 scrollTimeout,
                                 isFirst = true,
                                 doScroll = function () {
                                     var offset = clickedTrack.offset(),
-                                        pos = e.pageY - offset.top - verticalDragHeight / 2,
+                                        pos = (e.pageY || e.originalEvent.changedTouches[0].pageY) - offset.top - verticalDragHeight / 2,
                                         contentDragY = paneHeight * settings.scrollPagePercent,
                                         dragY = (dragMaxY * contentDragY) / (contentHeight - paneHeight);
                                     if (direction < 0) {
@@ -717,16 +737,16 @@
                 }
 
                 if (isScrollableH) {
-                    horizontalTrack.on('mousedown.jsp', function (e) {
+                    horizontalTrack.on('mousedown.jsp touchstart.jsp.nonPassive', function (e) {
                         if (e.originalTarget === undefined || e.originalTarget == e.currentTarget) {
                             var clickedTrack = $(this),
                                 offset = clickedTrack.offset(),
-                                direction = e.pageX - offset.left - horizontalDragPosition,
+                                direction = (e.pageX || e.originalEvent.changedTouches[0].pageX) - offset.left - horizontalDragPosition,
                                 scrollTimeout,
                                 isFirst = true,
                                 doScroll = function () {
                                     var offset = clickedTrack.offset(),
-                                        pos = e.pageX - offset.left - horizontalDragWidth / 2,
+                                        pos = (e.pageX || e.originalEvent.changedTouches[0].pageX) - offset.left - horizontalDragWidth / 2,
                                         contentDragX = paneWidth * settings.scrollPagePercent,
                                         dragX = (dragMaxX * contentDragX) / (contentWidth - paneWidth);
                                     if (direction < 0) {
@@ -753,10 +773,10 @@
                                         clearTimeout(scrollTimeout);
                                     }
                                     scrollTimeout = null;
-                                    $(document).off('mouseup.jsp', cancelClick);
+                                    $(document).off('mouseup.jsp touchend.jsp touchcancel.jsp', cancelClick);
                                 };
                             doScroll();
-                            $(document).on('mouseup.jsp', cancelClick);
+                            $(document).on('mouseup.jsp touchend.jsp touchcancel.jsp', cancelClick);
                             return false;
                         }
                     });
@@ -765,15 +785,15 @@
 
             function removeClickOnTrack() {
                 if (horizontalTrack) {
-                    horizontalTrack.off('mousedown.jsp');
+                    horizontalTrack.off('mousedown.jsp touchstart.jsp.nonPassive');
                 }
                 if (verticalTrack) {
-                    verticalTrack.off('mousedown.jsp');
+                    verticalTrack.off('mousedown.jsp touchstart.jsp.nonPassive');
                 }
             }
 
             function cancelDrag() {
-                $('html').off('dragstart.jsp selectstart.jsp mousemove.jsp mouseup.jsp mouseleave.jsp');
+                $('html').off('dragstart.jsp selectstart.jsp mousemove.jsp touchmove.jsp.nonPassive mouseup.jsp touchend.jsp touchcancel.jsp mouseleave.jsp');
 
                 if (verticalDrag) {
                     verticalDrag.removeClass('jspActive');
@@ -1281,7 +1301,7 @@
 
                 container
                     .off('touchstart.jsp touchmove.jsp touchend.jsp click.jsp-touchclick')
-                    .on('touchstart.jsp', function (e) {
+                    .on('touchstart.jsp.nonPassive', function (e) {
                         var touch = e.originalEvent.touches[0];
                         startX = contentPositionX();
                         startY = contentPositionY();
@@ -1290,7 +1310,7 @@
                         moved = false;
                         moving = true;
                     })
-                    .on('touchmove.jsp', function (ev) {
+                    .on('touchmove.jsp.nonPassive', function (ev) {
                         if (!moving) {
                             return;
                         }
